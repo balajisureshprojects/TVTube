@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.os.Bundle
 import android.view.KeyEvent
-import android.view.View
 import android.view.WindowManager
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -13,6 +12,8 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import java.io.ByteArrayInputStream
 
 class MainActivity : Activity() {
@@ -31,20 +32,62 @@ class MainActivity : Activity() {
         "play.google.com/log"
     )
 
-    private val adBlockScript = """
+    private val tvTubeScript = """
         (function() {
             if (window.__tvTubeLoaded) return;
             window.__tvTubeLoaded = true;
 
-            // 1. Report 4K display capability so YouTube doesn't hide 1080p/1440p/4K options
+            // 1. Report 1080p screen without touching devicePixelRatio (saves RAM/GPU)
             try {
-                Object.defineProperty(window.screen, 'width', { get: () => 3840 });
-                Object.defineProperty(window.screen, 'height', { get: () => 2160 });
-                Object.defineProperty(window.screen, 'availWidth', { get: () => 3840 });
-                Object.defineProperty(window.screen, 'availHeight', { get: () => 2160 });
+                Object.defineProperty(window.screen, 'width', { get: () => 1920, configurable: true });
+                Object.defineProperty(window.screen, 'height', { get: () => 1080, configurable: true });
+                Object.defineProperty(window.screen, 'availWidth', { get: () => 1920, configurable: true });
+                Object.defineProperty(window.screen, 'availHeight', { get: () => 1080, configurable: true });
             } catch (e) {}
 
-            // 2. Strip ad payloads from YouTube's internal API responses
+            // 2. Block AV1, HEVC, and 10-bit HDR so YouTube only sends hardware-decoded H.264/VP9
+            // Fixes "This video format is not supported" and software-decoding lag
+            const badCodecs = /av01|hev1|hvc1|vp09\.02|vp09\.03/i;
+            if (window.MediaSource && MediaSource.isTypeSupported) {
+                const origSupported = MediaSource.isTypeSupported.bind(MediaSource);
+                MediaSource.isTypeSupported = function(mime) {
+                    if (mime && badCodecs.test(mime)) return false;
+                    return origSupported(mime);
+                };
+            }
+            const origCanPlay = HTMLMediaElement.prototype.canPlayType;
+            HTMLMediaElement.prototype.canPlayType = function(mime) {
+                if (mime && badCodecs.test(mime)) return '';
+                return origCanPlay.call(this, mime);
+            };
+
+            // 3. Strip UI animations, shadows, blurs, and ambient effects to reduce RAM/stutter
+            const injectLiteCss = function() {
+                if (document.getElementById('tvtube-lite-css')) return;
+                const style = document.createElement('style');
+                style.id = 'tvtube-lite-css';
+                style.textContent = `
+                    *, *::before, *::after {
+                        animation: none !important;
+                        transition: none !important;
+                        box-shadow: none !important;
+                        text-shadow: none !important;
+                        backdrop-filter: none !important;
+                        -webkit-backdrop-filter: none !important;
+                    }
+                    #cinematics, .ytlr-watch-ambient-mode {
+                        display: none !important;
+                    }
+                `;
+                (document.head || document.documentElement).appendChild(style);
+            };
+            if (document.head || document.documentElement) {
+                injectLiteCss();
+            } else {
+                document.addEventListener('DOMContentLoaded', injectLiteCss, { once: true });
+            }
+
+            // 4. Strip ad payloads from YouTube's internal API responses
             const origParse = JSON.parse;
             JSON.parse = function(text, reviver) {
                 const data = origParse.call(this, text, reviver);
@@ -56,21 +99,22 @@ class MainActivity : Activity() {
                 return data;
             };
 
-            // 3. Fallback: fast-forward & click skip if an ad slips through
+            // 5. Lightweight fallback ad-skipper
             setInterval(function() {
-                const player = document.querySelector('.html5-video-player');
+                const player = document.querySelector('.html5-video-player.ad-showing');
+                if (!player) return;
                 const video = document.querySelector('video');
-                if (player && player.classList.contains('ad-showing') && video) {
+                if (video) {
                     video.muted = true;
                     if (isFinite(video.duration) && video.duration > 0) {
                         video.currentTime = video.duration;
                     }
-                    const skipBtn = document.querySelector(
-                        '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button'
-                    );
-                    if (skipBtn) skipBtn.click();
                 }
-            }, 300);
+                const skipBtn = document.querySelector(
+                    '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button'
+                );
+                if (skipBtn) skipBtn.click();
+            }, 500);
         })();
     """.trimIndent()
 
@@ -80,7 +124,6 @@ class MainActivity : Activity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         webView = WebView(this)
-        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
         webView.isFocusable = true
         webView.isFocusableInTouchMode = true
         setContentView(webView)
@@ -94,14 +137,21 @@ class MainActivity : Activity() {
         settings.useWideViewPort = true
         settings.loadWithOverviewMode = true
         settings.cacheMode = WebSettings.LOAD_DEFAULT
+        settings.builtInZoomControls = false
+        settings.displayZoomControls = false
+        settings.allowFileAccess = false
 
-        // Modern Cobalt 26 Android TV User-Agent to unlock 1080p / 1440p / 4K / 60fps
+        // Standard Chromium Smart TV (webOS) UA — uses native MSE without proprietary hooks
         settings.userAgentString =
-            "Mozilla/5.0 (Linux armeabi-v7a; Android 10) Cobalt/26.android.1.1036254-gold (unlike Gecko) v8/11.4.183.40-jit gles Starboard/17, Sony_ATV_sdm845_13140765/52.1.C.0.268 (KDDI, SOV38) com.google.android.youtube.tv/6.36.300"
+            "Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.196 Safari/537.36 WebAppManager"
 
         val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptCookie(true)
         cookieManager.setAcceptThirdPartyCookies(webView, true)
+
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_JAVASCRIPT)) {
+            WebViewCompat.addDocumentStartJavaScript(webView, tvTubeScript, setOf("*"))
+        }
 
         webView.webChromeClient = WebChromeClient()
 
@@ -120,7 +170,7 @@ class MainActivity : Activity() {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                view?.evaluateJavascript(adBlockScript, null)
+                view?.evaluateJavascript(tvTubeScript, null)
             }
         }
 
@@ -128,7 +178,6 @@ class MainActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        // Translate TV remote Back button into a real native Escape key event
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
             val escapeEvent = KeyEvent(
                 event.downTime,
