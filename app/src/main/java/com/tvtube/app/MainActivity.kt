@@ -45,8 +45,8 @@ class MainActivity : Activity() {
                 Object.defineProperty(window.screen, 'availHeight', { get: () => 2160, configurable: true });
             } catch (e) {}
 
-            // 2. Block AV1, HEVC, 10-bit HDR, and Dolby 5.1 (ac-3/ec-3) to prevent format errors
-            const badCodecs = /av01|hev1|hvc1|vp09\.02|vp09\.03|ac-3|ec-3/i;
+            // 2. Force hardware H.264 (avc1) by blocking VP9, AV1, HEVC, HDR, and Dolby 5.1
+            const badCodecs = /av01|hev1|hvc1|vp9|vp09|ac-3|ec-3/i;
             if (window.MediaSource && MediaSource.isTypeSupported) {
                 const origSupported = MediaSource.isTypeSupported.bind(MediaSource);
                 MediaSource.isTypeSupported = function(mime) {
