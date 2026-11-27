@@ -37,7 +37,7 @@ class MainActivity : Activity() {
             if (window.__tvTubeLoaded) return;
             window.__tvTubeLoaded = true;
 
-            // 1. Report 4K screen capability without inflating the WebView canvas
+            // 1. Report 4K screen without inflating the WebView canvas
             try {
                 Object.defineProperty(window.screen, 'width', { get: () => 3840, configurable: true });
                 Object.defineProperty(window.screen, 'height', { get: () => 2160, configurable: true });
@@ -45,8 +45,8 @@ class MainActivity : Activity() {
                 Object.defineProperty(window.screen, 'availHeight', { get: () => 2160, configurable: true });
             } catch (e) {}
 
-            // 2. Block AV1, HEVC, and 10-bit HDR so only hardware-decoded H.264 / 8-bit VP9 play
-            const badCodecs = /av01|hev1|hvc1|vp09\.02|vp09\.03/i;
+            // 2. Block AV1, HEVC, 10-bit HDR, and Dolby 5.1 (ac-3/ec-3) to prevent format errors
+            const badCodecs = /av01|hev1|hvc1|vp09\.02|vp09\.03|ac-3|ec-3/i;
             if (window.MediaSource && MediaSource.isTypeSupported) {
                 const origSupported = MediaSource.isTypeSupported.bind(MediaSource);
                 MediaSource.isTypeSupported = function(mime) {
@@ -140,9 +140,9 @@ class MainActivity : Activity() {
         settings.displayZoomControls = false
         settings.allowFileAccess = false
 
-        // Modern Chromium Smart TV UA — standard MSE (no Cobalt format errors, no Web0S 480p cap)
+        // PS4 Leanback UA — unlocks 1080p/2K on live streams and normal videos
         settings.userAgentString =
-            "Mozilla/5.0 (SMART-TV; Linux; Tizen 7.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.207 TV Safari/537.36"
+            "Mozilla/5.0 (PS4; Leanback Shell) Cobalt/26.lts.0-qa; compatible;"
 
         val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptCookie(true)
