@@ -178,9 +178,9 @@ class MainActivity : Activity() {
         settings.displayZoomControls = false
         settings.allowFileAccess = false
 
-        // Standard Chromium Smart TV (webOS) UA — uses native MSE without proprietary hooks
+        // PS4 Leanback UA — removes YouTube's server-side 480p/720p cap on live & 60fps streams
         settings.userAgentString =
-            "Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.196 Safari/537.36 WebAppManager"
+            "Mozilla/5.0 (PS4; Leanback Shell) Cobalt/26.lts.0-qa; compatible;"
 
         val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptCookie(true)
