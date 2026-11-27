@@ -4,8 +4,10 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.os.Bundle
 import android.view.KeyEvent
+import android.view.View
 import android.view.WindowManager
 import android.webkit.CookieManager
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -34,7 +36,15 @@ class MainActivity : Activity() {
             if (window.__tvTubeLoaded) return;
             window.__tvTubeLoaded = true;
 
-            // 1. Strip ad payloads from YouTube's internal API responses
+            // 1. Report 4K display capability so YouTube doesn't hide 1080p/1440p/4K options
+            try {
+                Object.defineProperty(window.screen, 'width', { get: () => 3840 });
+                Object.defineProperty(window.screen, 'height', { get: () => 2160 });
+                Object.defineProperty(window.screen, 'availWidth', { get: () => 3840 });
+                Object.defineProperty(window.screen, 'availHeight', { get: () => 2160 });
+            } catch (e) {}
+
+            // 2. Strip ad payloads from YouTube's internal API responses
             const origParse = JSON.parse;
             JSON.parse = function(text, reviver) {
                 const data = origParse.call(this, text, reviver);
@@ -46,7 +56,7 @@ class MainActivity : Activity() {
                 return data;
             };
 
-            // 2. Fallback: fast-forward & click skip if an ad slips through
+            // 3. Fallback: fast-forward & click skip if an ad slips through
             setInterval(function() {
                 const player = document.querySelector('.html5-video-player');
                 const video = document.querySelector('video');
@@ -70,7 +80,11 @@ class MainActivity : Activity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         webView = WebView(this)
+        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        webView.isFocusable = true
+        webView.isFocusableInTouchMode = true
         setContentView(webView)
+        webView.requestFocus()
 
         val settings = webView.settings
         settings.javaScriptEnabled = true
@@ -80,20 +94,24 @@ class MainActivity : Activity() {
         settings.useWideViewPort = true
         settings.loadWithOverviewMode = true
         settings.cacheMode = WebSettings.LOAD_DEFAULT
-        // Spoof a Smart TV so YouTube serves the remote-friendly TV interface
+
+        // Modern Cobalt 26 Android TV User-Agent to unlock 1080p / 1440p / 4K / 60fps
         settings.userAgentString =
-            "Mozilla/5.0 (SMART-TV; Linux; Tizen 7.0) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/5.0 Chrome/94.0.4606.31 TV Safari/537.36"
+            "Mozilla/5.0 (Linux armeabi-v7a; Android 10) Cobalt/26.android.1.1036254-gold (unlike Gecko) v8/11.4.183.40-jit gles Starboard/17, Sony_ATV_sdm845_13140765/52.1.C.0.268 (KDDI, SOV38) com.google.android.youtube.tv/6.36.300"
 
         val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptCookie(true)
         cookieManager.setAcceptThirdPartyCookies(webView, true)
+
+        webView.webChromeClient = WebChromeClient()
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(
                 view: WebView?,
                 request: WebResourceRequest?
             ): WebResourceResponse? {
-                val url = request?.url?.toString()?.lowercase() ?: return super.shouldInterceptRequest(view, request)
+                val url = request?.url?.toString()?.lowercase()
+                    ?: return super.shouldInterceptRequest(view, request)
                 if (adUrlKeywords.any { url.contains(it) }) {
                     return WebResourceResponse("text/plain", "utf-8", ByteArrayInputStream(ByteArray(0)))
                 }
@@ -110,14 +128,21 @@ class MainActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        // Send TV remote Back button as Escape so YouTube TV navigates back cleanly
+        // Translate TV remote Back button into a real native Escape key event
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
-            if (event.action == KeyEvent.ACTION_DOWN) {
-                webView.evaluateJavascript(
-                    "document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', keyCode: 27, which: 27, bubbles: true}));",
-                    null
-                )
-            }
+            val escapeEvent = KeyEvent(
+                event.downTime,
+                event.eventTime,
+                event.action,
+                KeyEvent.KEYCODE_ESCAPE,
+                event.repeatCount,
+                event.metaState,
+                event.deviceId,
+                event.scanCode,
+                event.flags,
+                event.source
+            )
+            webView.dispatchKeyEvent(escapeEvent)
             return true
         }
         return super.dispatchKeyEvent(event)
