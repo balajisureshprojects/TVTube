@@ -37,7 +37,7 @@ class MainActivity : Activity() {
             if (window.__tvTubeLoaded) return;
             window.__tvTubeLoaded = true;
 
-            // 1. Report 1080p screen without touching devicePixelRatio (saves RAM/GPU)
+            // 1. Report 1080p screen dimensions
             try {
                 Object.defineProperty(window.screen, 'width', { get: () => 1920, configurable: true });
                 Object.defineProperty(window.screen, 'height', { get: () => 1080, configurable: true });
@@ -45,7 +45,7 @@ class MainActivity : Activity() {
                 Object.defineProperty(window.screen, 'availHeight', { get: () => 1080, configurable: true });
             } catch (e) {}
 
-            // 2. Block AV1, HEVC, and 10-bit HDR so YouTube only sends hardware-decoded H.264/VP9
+            // 2. Block AV1/HEVC/10-bit HDR, and mark supported H.264/VP9 streams as smooth
             const badCodecs = /av01|hev1|hvc1|vp09\.02|vp09\.03/i;
             if (window.MediaSource && MediaSource.isTypeSupported) {
                 const origSupported = MediaSource.isTypeSupported.bind(MediaSource);
@@ -59,6 +59,21 @@ class MainActivity : Activity() {
                 if (mime && badCodecs.test(mime)) return '';
                 return origCanPlay.call(this, mime);
             };
+            if (navigator.mediaCapabilities && navigator.mediaCapabilities.decodingInfo) {
+                const origDecodingInfo = navigator.mediaCapabilities.decodingInfo.bind(navigator.mediaCapabilities);
+                navigator.mediaCapabilities.decodingInfo = function(config) {
+                    const ct = config && config.video && config.video.contentType;
+                    if (ct && badCodecs.test(ct)) {
+                        return Promise.resolve({ supported: false, smooth: false, powerEfficient: false });
+                    }
+                    return origDecodingInfo(config).then(function(res) {
+                        if (res && res.supported) {
+                            return { supported: true, smooth: true, powerEfficient: true };
+                        }
+                        return res;
+                    });
+                };
+            }
 
             // 3. Strip UI animations, shadows, blurs, and ambient effects to reduce RAM/stutter
             const injectLiteCss = function() {
@@ -125,6 +140,8 @@ class MainActivity : Activity() {
         webView = WebView(this)
         webView.isFocusable = true
         webView.isFocusableInTouchMode = true
+        // 1:1 physical pixels so viewport reports 1920x1080 instead of 960x540
+        webView.setInitialScale(100)
         setContentView(webView)
         webView.requestFocus()
 
@@ -134,7 +151,7 @@ class MainActivity : Activity() {
         settings.databaseEnabled = true
         settings.mediaPlaybackRequiresUserGesture = false
         settings.useWideViewPort = true
-        settings.loadWithOverviewMode = true
+        settings.loadWithOverviewMode = false
         settings.cacheMode = WebSettings.LOAD_DEFAULT
         settings.builtInZoomControls = false
         settings.displayZoomControls = false
