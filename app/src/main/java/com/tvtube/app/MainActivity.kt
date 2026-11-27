@@ -37,12 +37,12 @@ class MainActivity : Activity() {
             if (window.__tvTubeLoaded) return;
             window.__tvTubeLoaded = true;
 
-            // 1. Report 1080p screen dimensions
+            // 1. Report 4K screen dimensions (no DPR override, so zero extra UI RAM)
             try {
-                Object.defineProperty(window.screen, 'width', { get: () => 1920, configurable: true });
-                Object.defineProperty(window.screen, 'height', { get: () => 1080, configurable: true });
-                Object.defineProperty(window.screen, 'availWidth', { get: () => 1920, configurable: true });
-                Object.defineProperty(window.screen, 'availHeight', { get: () => 1080, configurable: true });
+                Object.defineProperty(window.screen, 'width', { get: () => 3840, configurable: true });
+                Object.defineProperty(window.screen, 'height', { get: () => 2160, configurable: true });
+                Object.defineProperty(window.screen, 'availWidth', { get: () => 3840, configurable: true });
+                Object.defineProperty(window.screen, 'availHeight', { get: () => 2160, configurable: true });
             } catch (e) {}
 
             // 2. Block AV1/HEVC/10-bit HDR, and mark supported H.264/VP9 streams as smooth
@@ -140,7 +140,7 @@ class MainActivity : Activity() {
         webView = WebView(this)
         webView.isFocusable = true
         webView.isFocusableInTouchMode = true
-        // 1:1 physical pixels so viewport reports 1920x1080 instead of 960x540
+        // 1:1 physical pixels so viewport isn't shrunk to 960x540
         webView.setInitialScale(100)
         setContentView(webView)
         webView.requestFocus()
