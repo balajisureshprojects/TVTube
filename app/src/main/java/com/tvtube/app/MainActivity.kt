@@ -46,7 +46,6 @@ class MainActivity : Activity() {
             } catch (e) {}
 
             // 2. Block AV1, HEVC, and 10-bit HDR so YouTube only sends hardware-decoded H.264/VP9
-            // Fixes "This video format is not supported" and software-decoding lag
             const badCodecs = /av01|hev1|hvc1|vp09\.02|vp09\.03/i;
             if (window.MediaSource && MediaSource.isTypeSupported) {
                 const origSupported = MediaSource.isTypeSupported.bind(MediaSource);
@@ -149,7 +148,7 @@ class MainActivity : Activity() {
         cookieManager.setAcceptCookie(true)
         cookieManager.setAcceptThirdPartyCookies(webView, true)
 
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_JAVASCRIPT)) {
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(webView, tvTubeScript, setOf("*"))
         }
 
