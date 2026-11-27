@@ -37,7 +37,30 @@ class MainActivity : Activity() {
             if (window.__tvTubeLoaded) return;
             window.__tvTubeLoaded = true;
 
-            // 1. Report 4K screen dimensions (no DPR override, so zero extra UI RAM)
+            // 1. Force real 1920px layout viewport instead of Chromium's 980px fallback
+            const applyViewport = function() {
+                const head = document.head || document.documentElement;
+                if (!head) return;
+                let meta = document.querySelector('meta[name="viewport"]');
+                if (!meta) {
+                    meta = document.createElement('meta');
+                    meta.name = 'viewport';
+                    head.insertBefore(meta, head.firstChild);
+                }
+                meta.content = 'width=1920';
+            };
+            applyViewport();
+            if (!document.head) {
+                const vpObs = new MutationObserver(function() {
+                    if (document.head) {
+                        applyViewport();
+                        vpObs.disconnect();
+                    }
+                });
+                vpObs.observe(document.documentElement || document, { childList: true, subtree: true });
+            }
+
+            // 2. Report 4K screen dimensions (zero extra UI RAM)
             try {
                 Object.defineProperty(window.screen, 'width', { get: () => 3840, configurable: true });
                 Object.defineProperty(window.screen, 'height', { get: () => 2160, configurable: true });
@@ -45,7 +68,7 @@ class MainActivity : Activity() {
                 Object.defineProperty(window.screen, 'availHeight', { get: () => 2160, configurable: true });
             } catch (e) {}
 
-            // 2. Block AV1/HEVC/10-bit HDR, and mark supported H.264/VP9 streams as smooth
+            // 3. Block AV1/HEVC/10-bit HDR, and mark supported H.264/VP9 streams as smooth
             const badCodecs = /av01|hev1|hvc1|vp09\.02|vp09\.03/i;
             if (window.MediaSource && MediaSource.isTypeSupported) {
                 const origSupported = MediaSource.isTypeSupported.bind(MediaSource);
@@ -75,7 +98,7 @@ class MainActivity : Activity() {
                 };
             }
 
-            // 3. Strip UI animations, shadows, blurs, and ambient effects to reduce RAM/stutter
+            // 4. Strip UI animations, shadows, blurs, and ambient effects to reduce RAM/stutter
             const injectLiteCss = function() {
                 if (document.getElementById('tvtube-lite-css')) return;
                 const style = document.createElement('style');
@@ -101,7 +124,7 @@ class MainActivity : Activity() {
                 document.addEventListener('DOMContentLoaded', injectLiteCss, { once: true });
             }
 
-            // 4. Strip ad payloads from YouTube's internal API responses
+            // 5. Strip ad payloads from YouTube's internal API responses
             const origParse = JSON.parse;
             JSON.parse = function(text, reviver) {
                 const data = origParse.call(this, text, reviver);
@@ -113,7 +136,7 @@ class MainActivity : Activity() {
                 return data;
             };
 
-            // 5. Lightweight fallback ad-skipper
+            // 6. Lightweight fallback ad-skipper
             setInterval(function() {
                 const player = document.querySelector('.html5-video-player.ad-showing');
                 if (!player) return;
@@ -140,8 +163,6 @@ class MainActivity : Activity() {
         webView = WebView(this)
         webView.isFocusable = true
         webView.isFocusableInTouchMode = true
-        // 1:1 physical pixels so viewport isn't shrunk to 960x540
-        webView.setInitialScale(100)
         setContentView(webView)
         webView.requestFocus()
 
@@ -151,7 +172,7 @@ class MainActivity : Activity() {
         settings.databaseEnabled = true
         settings.mediaPlaybackRequiresUserGesture = false
         settings.useWideViewPort = true
-        settings.loadWithOverviewMode = false
+        settings.loadWithOverviewMode = true
         settings.cacheMode = WebSettings.LOAD_DEFAULT
         settings.builtInZoomControls = false
         settings.displayZoomControls = false
