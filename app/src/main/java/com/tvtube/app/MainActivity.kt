@@ -37,30 +37,7 @@ class MainActivity : Activity() {
             if (window.__tvTubeLoaded) return;
             window.__tvTubeLoaded = true;
 
-            // 1. Force real 1920px layout viewport instead of Chromium's 980px fallback
-            const applyViewport = function() {
-                const head = document.head || document.documentElement;
-                if (!head) return;
-                let meta = document.querySelector('meta[name="viewport"]');
-                if (!meta) {
-                    meta = document.createElement('meta');
-                    meta.name = 'viewport';
-                    head.insertBefore(meta, head.firstChild);
-                }
-                meta.content = 'width=1920';
-            };
-            applyViewport();
-            if (!document.head) {
-                const vpObs = new MutationObserver(function() {
-                    if (document.head) {
-                        applyViewport();
-                        vpObs.disconnect();
-                    }
-                });
-                vpObs.observe(document.documentElement || document, { childList: true, subtree: true });
-            }
-
-            // 2. Report 4K screen dimensions (zero extra UI RAM)
+            // 1. Report 4K screen capability without inflating the WebView canvas
             try {
                 Object.defineProperty(window.screen, 'width', { get: () => 3840, configurable: true });
                 Object.defineProperty(window.screen, 'height', { get: () => 2160, configurable: true });
@@ -68,7 +45,7 @@ class MainActivity : Activity() {
                 Object.defineProperty(window.screen, 'availHeight', { get: () => 2160, configurable: true });
             } catch (e) {}
 
-            // 3. Block AV1/HEVC/10-bit HDR, and mark supported H.264/VP9 streams as smooth
+            // 2. Block AV1, HEVC, and 10-bit HDR so only hardware-decoded H.264 / 8-bit VP9 play
             const badCodecs = /av01|hev1|hvc1|vp09\.02|vp09\.03/i;
             if (window.MediaSource && MediaSource.isTypeSupported) {
                 const origSupported = MediaSource.isTypeSupported.bind(MediaSource);
@@ -82,23 +59,8 @@ class MainActivity : Activity() {
                 if (mime && badCodecs.test(mime)) return '';
                 return origCanPlay.call(this, mime);
             };
-            if (navigator.mediaCapabilities && navigator.mediaCapabilities.decodingInfo) {
-                const origDecodingInfo = navigator.mediaCapabilities.decodingInfo.bind(navigator.mediaCapabilities);
-                navigator.mediaCapabilities.decodingInfo = function(config) {
-                    const ct = config && config.video && config.video.contentType;
-                    if (ct && badCodecs.test(ct)) {
-                        return Promise.resolve({ supported: false, smooth: false, powerEfficient: false });
-                    }
-                    return origDecodingInfo(config).then(function(res) {
-                        if (res && res.supported) {
-                            return { supported: true, smooth: true, powerEfficient: true };
-                        }
-                        return res;
-                    });
-                };
-            }
 
-            // 4. Strip UI animations, shadows, blurs, and ambient effects to reduce RAM/stutter
+            // 3. Strip UI animations, shadows, blurs, and ambient effects to save RAM/GPU
             const injectLiteCss = function() {
                 if (document.getElementById('tvtube-lite-css')) return;
                 const style = document.createElement('style');
@@ -124,7 +86,7 @@ class MainActivity : Activity() {
                 document.addEventListener('DOMContentLoaded', injectLiteCss, { once: true });
             }
 
-            // 5. Strip ad payloads from YouTube's internal API responses
+            // 4. Strip ad payloads from YouTube's internal API responses
             const origParse = JSON.parse;
             JSON.parse = function(text, reviver) {
                 const data = origParse.call(this, text, reviver);
@@ -136,7 +98,7 @@ class MainActivity : Activity() {
                 return data;
             };
 
-            // 6. Lightweight fallback ad-skipper
+            // 5. Lightweight fallback ad-skipper
             setInterval(function() {
                 const player = document.querySelector('.html5-video-player.ad-showing');
                 if (!player) return;
@@ -178,9 +140,9 @@ class MainActivity : Activity() {
         settings.displayZoomControls = false
         settings.allowFileAccess = false
 
-        // PS4 Leanback UA — removes YouTube's server-side 480p/720p cap on live & 60fps streams
+        // Modern Chromium Smart TV UA — standard MSE (no Cobalt format errors, no Web0S 480p cap)
         settings.userAgentString =
-            "Mozilla/5.0 (PS4; Leanback Shell) Cobalt/26.lts.0-qa; compatible;"
+            "Mozilla/5.0 (SMART-TV; Linux; Tizen 7.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.6367.207 TV Safari/537.36"
 
         val cookieManager = CookieManager.getInstance()
         cookieManager.setAcceptCookie(true)
